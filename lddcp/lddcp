@@ -1,0 +1,142 @@
+#!/bin/bash
+#
+# Shell script to find and copy all of the shared libraries used by a program.
+# It will search for all of the shared libraries recursively and will respect
+# links and copy the linked libraries alongside the links.
+#
+# Copyright 2016-2018, Frederico Martins
+#   Author: Frederico Martins <http://github.com/fscm>
+#
+# SPDX-License-Identifier: MIT
+#
+# This program is free software. You can use it and/or modify it under the
+# terms of the MIT License.
+#
+
+set -e
+
+BASEDIR=$(dirname $0)
+BASENAME=$(basename $0)
+
+# Variables
+DESTINATION=
+PROGRAM=
+
+__QUEUED_OBJS__=()
+__REQUIRED_OBJS__=()
+
+# Usage
+#
+# Globals: <none>
+# Parameters: <none>
+# Returns: <none>
+#
+function show_usage() {
+  echo "Usage: ${BASENAME} [options]"
+  echo "  options:"
+  echo "    -d <PATH>     Where the shared libraries will be copyed to."
+  echo "    -p <PROGRAM>  Program to check for shared libraries."
+}
+
+# Options parsing
+while getopts ":d:p:" opt; do
+  case $opt in
+    d)
+      DESTINATION=${OPTARG}
+      ;;
+    p)
+      PROGRAM=${OPTARG}
+      ;;
+    \?)
+      echo >&2 "  [ERROR] Invalid option: -${OPTARG}"
+      exit 1
+      ;;
+    :)
+      echo >&2 "  [ERROR] Option -${OPTARG} requires an argument"
+      exit 2
+      ;;
+  esac
+done
+
+# Check arguments
+if [[ $# -eq 0 ]]; then
+  show_usage
+  exit 3
+fi
+
+# Check requirements
+if [[ ("x${DESTINATION}" = "x") || ("x${PROGRAM}" = "x") ]]; then
+  echo >&2 "  [ERROR] Destination path (-d) and program name (-p) are required."
+  exit 4
+fi
+
+# Check if destination folder exists
+# -- Remove this check for destination folder to be crated
+if ! [[ -d "${DESTINATION}" ]]; then
+  echo >&2 "  [ERROR] Destination path not found or not a directory."
+  exit 5
+fi
+
+# Finds all the shared objects used by a program recursively.
+#
+# Globals: __REQUIRED_OBJS__
+# Parameters: $program
+# Returns: <none>
+#
+function find_shared_objects() {
+  local obj=$1
+  for shared in $(ldd ${obj} | awk 'BEGIN{ORS=" "} $1~/^\//{print $1} $3~/^\//{print $3}'); do
+    if [[ -L "${shared}" ]]; then
+      _obj=$(readlink "${shared}")
+      if ! [[ ${_obj} == /* ]]; then
+        _obj="$(dirname ${shared})/${_obj}"
+      fi
+      __REQUIRED_OBJS__+=("${_obj}")
+    fi
+    __REQUIRED_OBJS__+=("${shared}")
+    find_shared_objects ${shared}
+  done
+}
+
+# Fills the queue with the deduplicated content of the required shared libraries
+# list (__REQUIRED_OBJS__) so that a copy can be made.
+#
+# Globals: __REQUIRED_OBJS__; __QUEUED_OBJS__
+# Parameters: <none>
+# Returns: <none>
+#
+function queue_shared_objects() {
+  __QUEUED_OBJS__=( $(printf '%s\n' "${__REQUIRED_OBJS__[@]}" | sort -u) )
+}
+
+# Copies the required shared libraries to the destiny path. Will respect file
+# type (if symbolic link or not) and the structure inside the destination path.
+#
+# Globals: __QUEUED_OBJS__; DESTINATION
+# Parameters: <none>
+# Returns: <none>
+#
+function copy_shared_objects() {
+  for obj in ${__QUEUED_OBJS__[@]}; do
+    echo " copying ${obj}"
+    obj_dirname=$(dirname ${obj})
+    if ! [[ -d ${DESTINATION}/${obj_dirname} ]]; then
+      mkdir -p ${DESTINATION}/${obj_dirname}
+    fi
+    cp -aP ${obj} ${DESTINATION}/${obj}
+  done
+}
+
+# Find the required shared objects
+echo " Finding required shared objects..."
+find_shared_objects ${PROGRAM}
+
+# Sort and remove any duplicated shared objects
+echo " Preparing shared objects..."
+queue_shared_objects
+
+# Copy the shared objects to the destination folder
+echo " Copying shared objects..."
+copy_shared_objects
+
+exit 0
