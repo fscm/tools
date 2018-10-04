@@ -1,4 +1,6 @@
 # Tools
+[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Ffscm%2Ftools.svg?type=shield)](https://app.fossa.io/projects/git%2Bgithub.com%2Ffscm%2Ftools?ref=badge_shield)
+
 
 Set of tools to perform different tasks.
 
@@ -51,3 +53,6 @@ who participated in this project.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE)
 file for details
+
+
+[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Ffscm%2Ftools.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2Ffscm%2Ftools?ref=badge_large)
