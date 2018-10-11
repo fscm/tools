@@ -20,7 +20,6 @@ BASENAME=$(basename $0)
 
 # Variables
 DESTINATION=
-#PROGRAMS=
 
 __PROGRAMS__=()
 __QUEUED_OBJS__=()
