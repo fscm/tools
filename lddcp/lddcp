@@ -20,8 +20,9 @@ BASENAME=$(basename $0)
 
 # Variables
 DESTINATION=
-PROGRAM=
+#PROGRAMS=
 
+__PROGRAMS__=()
 __QUEUED_OBJS__=()
 __REQUIRED_OBJS__=()
 
@@ -35,7 +36,8 @@ function show_usage() {
   echo "Usage: ${BASENAME} [options]"
   echo "  options:"
   echo "    -d <PATH>     Where the shared libraries will be copyed to."
-  echo "    -p <PROGRAM>  Program to check for shared libraries."
+  echo "    -p <PROGRAM>  Program to check for shared libraries (or programs"
+  echo "                  separated with a comma)."
 }
 
 # Options parsing
@@ -45,7 +47,7 @@ while getopts ":d:p:" opt; do
       DESTINATION=${OPTARG}
       ;;
     p)
-      PROGRAM=${OPTARG}
+      __PROGRAMS__+=("${OPTARG}")
       ;;
     \?)
       echo >&2 "  [ERROR] Invalid option: -${OPTARG}"
@@ -65,7 +67,7 @@ if [[ $# -eq 0 ]]; then
 fi
 
 # Check requirements
-if [[ ("x${DESTINATION}" = "x") || ("x${PROGRAM}" = "x") ]]; then
+if [[ ("x${DESTINATION}" = "x") || (${#__PROGRAMS__[@]} -eq 0) ]]; then
   echo >&2 "  [ERROR] Destination path (-d) and program name (-p) are required."
   exit 4
 fi
@@ -118,18 +120,24 @@ function queue_shared_objects() {
 #
 function copy_shared_objects() {
   for obj in ${__QUEUED_OBJS__[@]}; do
-    echo " copying ${obj}"
+    echo "  copying ${obj}"
     obj_dirname=$(dirname ${obj})
     if ! [[ -d ${DESTINATION}/${obj_dirname} ]]; then
       mkdir -p ${DESTINATION}/${obj_dirname}
     fi
-    cp -aP ${obj} ${DESTINATION}/${obj}
+    \cp -aP ${obj} ${DESTINATION}/${obj}
   done
 }
 
 # Find the required shared objects
-echo " Finding required shared objects..."
-find_shared_objects ${PROGRAM}
+for program in ${__PROGRAMS__[@]//,/ }; do
+  if [[ -f "${program}" ]]; then
+    echo " Finding required shared objects [${program}]..."
+    find_shared_objects ${program}
+  else
+      echo " [WARN] Program not found (${program})."
+    fi
+done
 
 # Sort and remove any duplicated shared objects
 echo " Preparing shared objects..."

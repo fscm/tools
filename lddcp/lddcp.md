@@ -41,15 +41,23 @@ Usage: lddcp [options]
 #### Script Options
 
 * `-d <PATH>` - *[required]* Where the shared libraries will be copyed to.
-* `-p <PROGRAM>` - *[required]* Program to check for shared libraries.
+* `-p <PROGRAM>` - *[required]* Program to check for shared libraries. Several programs can be set by either using extra `-p` options or if separated with a comma (`,`) on the same `-p` option.
 
-#### Example
+#### Examples
 
 The following example will check the *sh* program for shared libraries and copy
 them to the */tmp/requirements* folder:
 
 ```
 lddcp -p /bin/sh -d /tmp/requirements
+```
+
+Checking several programs is also possible. The following example will check
+the *sh*, the *ls* and the *ln* programs using the two possible ways (several
+`-p` options and `,` separated):
+
+```
+lddcp -p /bin/sh -p /bin/ls,/bin/ln -d /tmp/requirements
 ```
 
 ## Contributing
