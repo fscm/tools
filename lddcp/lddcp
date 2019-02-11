@@ -93,7 +93,7 @@ fi
 function find_shared_objects() {
   local obj=$1
   for shared in $(ldd ${obj} | awk 'BEGIN{ORS=" "} $1~/^\//{print $1} $3~/^\//{print $3}'); do
-    if ! [[ "${__REQUIRED_OBJS__[@]}" =~ "${shared}" ]]; then
+    if ! [[ " ${__REQUIRED_OBJS__[@]} " =~ " ${shared} " ]]; then
       if [[ -L "${shared}" ]]; then
         _obj=$(readlink "${shared}")
         if ! [[ ${_obj} == /* ]]; then
