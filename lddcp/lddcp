@@ -35,15 +35,21 @@ function show_usage() {
   echo "Usage: ${BASENAME} [options]"
   echo "  options:"
   echo "    -d <PATH>     Where the shared libraries will be copyed to."
+  echo "    -l <LIBRARY>  Library to check for shared libraries (or libraries"
+  echo "                  separated with a comma). Will also be copied."
   echo "    -p <PROGRAM>  Program to check for shared libraries (or programs"
   echo "                  separated with a comma)."
 }
 
 # Options parsing
-while getopts ":d:p:" opt; do
+while getopts ":d:l:p:" opt; do
   case $opt in
     d)
       DESTINATION=${OPTARG}
+      ;;
+    l)
+      __REQUIRED_OBJS__+=("${OPTARG}")
+      __PROGRAMS__+=("${OPTARG}")
       ;;
     p)
       __PROGRAMS__+=("${OPTARG}")
