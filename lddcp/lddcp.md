@@ -41,6 +41,7 @@ Usage: lddcp [options]
 #### Script Options
 
 * `-d <PATH>` - *[required]* Where the shared libraries will be copyed to.
+* `-l <LIBRARY>` - Library to check for shared libraries. Several Libraries can be set by either using extra `-l` options or if separated with a comma (`,`) on the same `-l` option. The library will also be copied to the destination folder.
 * `-p <PROGRAM>` - *[required]* Program to check for shared libraries. Several programs can be set by either using extra `-p` options or if separated with a comma (`,`) on the same `-p` option.
 
 #### Examples
