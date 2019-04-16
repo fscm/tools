@@ -1,0 +1,119 @@
+#!/bin/bash
+#
+# Shell script to install Jenkins plugins.
+# It will search for dependencies recursively within the plugins.
+#
+# Copyright 2016-2019, Frederico Martins
+#   Author: Frederico Martins <http://github.com/fscm>
+#
+# SPDX-License-Identifier: MIT
+#
+# This program is free software. You can use it and/or modify it under the
+# terms of the MIT License.
+#
+
+set -e
+
+BASEDIR=$(dirname $0)
+BASENAME=$(basename $0)
+
+# Variables
+PLUGINS_DIR=
+PLUGINS_FILE=
+
+__PLUGINS__=()
+
+# Usage
+#
+# Globals: <none>
+# Parameters: <none>
+# Returns: <none>
+#
+function show_usage() {
+  echo "Usage: ${BASENAME} [options]"
+  echo "  options:"
+  echo "    -d <PATH>  Directory where the plugins will be installed."
+  echo "    -f <FILE>  File with the plugins to install (one per line)."
+}
+
+# Options parsing
+while getopts ":d:f:" opt; do
+  case $opt in
+    d)
+      PLUGINS_DIR=${OPTARG}
+      ;;
+    f)
+      PLUGINS_FILE=${OPTARG}
+      ;;
+    \?)
+      echo >&2 "  [ERROR] Invalid option: -${OPTARG}"
+      exit 1
+      ;;
+    :)
+      echo >&2 "  [ERROR] Option -${OPTARG} requires an argument"
+      exit 2
+      ;;
+  esac
+done
+
+# Check arguments
+if [[ $# -eq 0 ]]; then
+  show_usage
+  exit 3
+fi
+
+# Check requirements
+if [[ ("x${PLUGINS_DIR}" = "x") || ("x${PLUGINS_FILE}" = "x") ]]; then
+  echo >&2 "  [ERROR] Plugins directory (-d) and plugins list (-f) are required."
+  exit 4
+fi
+
+# Check if plugins folder exists
+# -- Remove this check for destination folder to be crated
+if ! [[ -d "${PLUGINS_DIR}" ]]; then
+  echo >&2 "  [ERROR] Plugins directory not found or not a directory."
+  exit 5
+fi
+
+# Finds all of the plugin dependencies and installs them.
+#
+# Globals: PLUGINS_DIR; __PLUGINS__
+# Parameters: $plugin
+# Returns: <none>
+#
+function install_dependencies() {
+  local _plugin_=$1
+  for dependency in $(unzip -p ${PLUGINS_DIR}/${_plugin_}.hpi META-INF/MANIFEST.MF | sed -e ':a;N;$!ba;s/\r//g;s/\n //g' | sed -n -e '/^Plugin-Dependencies/p' | sed -e 's/^.*: //g;s/,/\n/g' | sed -n -e 's/\([^:]\):.*/\1/p' | sed -e ':a;N;$!ba;s/\n/ /g'); do
+    if ! [[ " ${__PLUGINS__[@]} " =~ " ${dependency} " ]]; then
+      install_plugin ${dependency}
+    fi
+  done
+}
+
+# Install a jenkins plugin into the plugins folder.
+#
+# Globals: PLUGINS_DIR; __PLUGINS__
+# Parameters: $plugin
+# Returns: <none>
+#
+function install_plugin() {
+  local _plugin_=$1
+  if ! [[ -d ${PLUGINS_DIR} ]]; then
+    mkdir -p ${PLUGINS_DIR}
+  fi
+  if [[ -e "${PLUGINS_DIR}/${_plugin_}.hpi" ]]; then
+    echo "  plugin '${_plugin_}' already installed"
+  else
+    echo "  installing '${_plugin_}'..."
+    __PLUGINS__+=("${plugin}")
+    curl -fsSL --retry 3 --insecure "https://updates.jenkins-ci.org/latest/${_plugin_}.hpi" --output "${PLUGINS_DIR}/${_plugin_}.hpi" &> /dev/null || echo "  unable to install plugin '${_plugin_}'..."
+    install_dependencies ${plugin}
+  fi
+}
+
+# Install the plugins...
+for plugin in $(cat ${PLUGINS_FILE} | sort -u); do
+  install_plugin ${plugin}
+done
+
+exit 0
