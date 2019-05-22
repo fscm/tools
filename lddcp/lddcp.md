@@ -26,9 +26,14 @@ This script requires *bash* version 4.0 or above to work properly.
 
 This script will also required the following system tools to be installed:
 * awk
+* basename
 * cp
+* dirname
 * ldd
+* mkdir
+* printf
 * readlink
+* sort
 
 ### Usage
 
