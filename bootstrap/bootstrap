@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Shell script to initialise a AWS terraform project with a S3 backend and
+# Shell script to initialise an AWS terraform project with a S3 backend and
 # a DynamoDB table to control state locking.
 #
 # Copyright 2016-2019, Frederico Martins

@@ -22,6 +22,7 @@ Detailed instructions can be found on the specific tools folders.
 
 ## List of Tools
 
+* `bootstrap` - Shell script to initialise an AWS terraform project.
 * `jpinst` - Shell script to install Jenkins plugins and dependencies.
 * `lddcp` - Shell script to find and copy all of the shared libraries used by a program.
 
