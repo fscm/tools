@@ -1,0 +1,215 @@
+#!/bin/bash
+#
+# Shell script to initialise a AWS terraform project with a S3 backend and
+# a DynamoDB table to control state locking.
+#
+# Copyright 2016-2019, Frederico Martins
+#   Author: Frederico Martins <http://github.com/fscm>
+#
+# SPDX-License-Identifier: MIT
+#
+# This program is free software. You can use it and/or modify it under the
+# terms of the MIT License.
+#
+
+set -e
+
+BASEDIR=$(dirname "$0")
+BASENAME=$(basename "$0")
+__TS__=$(date +%Y%m%d%H%M%S)
+
+# Variables
+ACTION_HELP=0
+ACTION_INIT=0
+AWS_PROFILE="default"
+AWS_REGION=
+INITIAL_DIR="$(pwd)"
+PROJECT_DIR="$(pwd)"
+PROJECT_NAME=
+
+__PROJECT_VARIABLES_FILE__="global-variables.tf"
+__TERRAFORM_BASE_FILE__="aws.tf"
+
+
+# Usage
+function show_usage() {
+  echo "Usage: ${BASENAME} [options] (help|init)"
+  echo "  help:"
+  echo "    <none>"
+  echo "  init:"
+  echo "    -d <PATH>     The project root directory (defaults to current location)."
+  echo "    -n <NAME>     The environment name."
+  echo "    -p <PROFILE>  The AWS cli profile (defaults to 'default')."
+  echo "    -r <REGION>   The AWS region (defaults to 'us-east-1')."
+}
+
+# Clean up
+function clean_up() {
+  # return to the initial folder
+  cd "${INITIAL_DIR}"
+}
+
+
+# Exit trap
+trap clean_up EXIT
+
+
+# Options parsing
+while getopts ":d:n:p:r:" opt; do
+  case ${opt} in
+    d)
+      PROJECT_DIR=${OPTARG%/}
+      ;;
+    n)
+      PROJECT_NAME=${OPTARG}
+      ;;
+    p)
+      AWS_PROFILE=${OPTARG}
+      ;;
+    r)
+      AWS_REGION=${OPTARG}
+      ;;
+    \?)
+      echo >&2 "  [ERROR] Invalid option: -${OPTARG}"
+      exit 1
+      ;;
+    :)
+      echo >&2 "  [ERROR] Option -${OPTARG} requires an argument"
+      exit 2
+      ;;
+  esac
+done
+
+shift $((OPTIND-1))
+
+for command in $(echo "${@}" | tr '[:upper:]' '[:lower:]'); do
+  case "${command}" in
+    help)
+      ACTION_HELP=1
+      ;;
+    init)
+      ACTION_INIT=1
+      ;;
+    *)
+      echo >&2 "  [WARN] Unknown command '${command}'"
+      ;;
+  esac
+done
+
+
+# Check arguments
+if [[ $# -eq 0 ]]; then
+  show_usage
+  exit 3
+fi
+if ! ((ACTION_HELP+ACTION_INIT)); then
+  show_usage
+  exit 0
+fi
+
+
+# === HELP ===
+if [[ "${ACTION_HELP}" -gt 0 ]]; then
+  show_usage
+  exit 0
+fi
+
+
+# === INIT ===
+if [[ "${ACTION_INIT}" -gt 0 ]]; then
+
+  # Check requirements
+  if [[ "x${PROJECT_NAME}" = "x" ]]; then
+    echo >&2 "  [ERROR] The project name (-n) option is mandatory."
+    exit 4
+  fi
+  if [[ "x${AWS_REGION}" = "x" ]]; then
+    AWS_REGION=$(\aws configure get ${AWS_PROFILE}.region)
+    if [[ "x${AWS_REGION}" = "x" ]]; then
+      echo >&2 "  [ERROR] The AWS region could not be determined, please use the '-n' option."
+      exit 5
+    fi
+  fi
+
+  # Create the environment directory
+  echo "  [INFO] Creating the environment [${PROJECT_NAME}]..."
+  if [[ -d "${PROJECT_DIR}" ]]; then
+    mkdir -p "${PROJECT_DIR}/${PROJECT_NAME}"
+  else
+    echo >&2 "  [ERROR] Project root directory not found (or not a directory)."
+    exit 6
+  fi
+  # Create the 'env' file
+  if [[ ! -f "${PROJECT_DIR}/${PROJECT_NAME}/.env" ]]; then
+    echo -e "export AWS_PROFILE='${AWS_PROFILE}'\nexport AWS_REGION='${AWS_REGION}'" > "${PROJECT_DIR}/${PROJECT_NAME}/.env"
+  fi
+  # Link to the project global variables file
+  [[ -f "${PROJECT_DIR}/${__PROJECT_VARIABLES_FILE__}" ]] && ln -s "../${__PROJECT_VARIABLES_FILE__}" "${PROJECT_DIR}/${PROJECT_NAME}/${__PROJECT_VARIABLES_FILE__}"
+
+  # Create the Terraform template
+  echo "  [INFO] Extracting terraform configuration file [${__TERRAFORM_BASE_FILE__}]..."
+  __tf_location__=$(grep --text --line-number '^__SCRIPT_DATA__:$' "${BASEDIR}/${BASENAME}" | cut -d ':' -f 1)
+  __tf_location__=$((__tf_location__ + 1))
+  __tf_template__="${PROJECT_DIR}/${PROJECT_NAME}/${__TERRAFORM_BASE_FILE__}"
+  tail -n +${__tf_location__} "${BASEDIR}/${BASENAME}" | uudecode -o "${__tf_template__}"
+
+  # Updating the Terraform template
+  echo "  [INFO] Updating the terraform configuration file [${__TERRAFORM_BASE_FILE__}]..."
+  __s3_bucket__="${PROJECT_NAME}-tf-remote-state"
+  sed -e "s/AWS_REGION/${AWS_REGION}/g;s/AWS_PROFILE/${AWS_PROFILE}/g;s/S3_BUCKET/${__s3_bucket__}/g;s/PROJECT_NAME/${PROJECT_NAME}/g" "${__tf_template__}" > "${__tf_template__}.new"
+  mv "${__tf_template__}.new" "${__tf_template__}"
+
+  # Change into the environment folder
+  echo "  [INFO] Changing into the environment folder [${PROJECT_DIR}/${PROJECT_NAME}]..."
+  cd "${PROJECT_DIR}/${PROJECT_NAME}"
+
+  # Executing Terraform
+  echo "  [INFO] Executing Terraform..."
+  terraform init -backend=false -no-color
+  terraform plan -out=backend.plan -no-color
+  terraform apply -auto-approve -no-color backend.plan
+  sed -e 's/#--#//g' "${__tf_template__}" > "${__tf_template__}.new"
+  mv "${__tf_template__}.new" "${__tf_template__}"
+  echo "yes" | terraform init -reconfigure -auto-approve -no-color
+
+  # Cleaning things up
+  echo "  [INFO] Cleaning the environment..."
+  rm backend.plan
+
+  # Leaving the environment folder
+  echo "  [INFO] Exiting the environment folder..."
+  cd "${INITIAL_DIR}"
+
+  # That's all folks
+  echo "  [INFO] Environment Created [${PROJECT_NAME}]"
+fi
+
+exit 0
+
+__SCRIPT_DATA__:
+begin 644 -
+M(PHC(%1E<G)A9F]R;2!S971T:6YG<RX*(PIT97)R869O<FT@>PH@(')E<75I
+M<F5D7W9E<G-I;VX@/2`B/CT@,"XQ,2XS(@H*("`C+2TC8F%C:V5N9"`B<S,B
+M('L*("`C+2TC("!B=6-K970@("`@("`@("`](")3,U]"54-+150B"B`@(RTM
+M(R`@9'EN86UO9&)?=&%B;&4@/2`B4%)/2D5#5%].04U%+71F+6QO8VLB"B`@
+M(RTM(R`@:V5Y("`@("`@("`@("`@/2`B=&5R<F%F;W)M+G1F<W1A=&4B"B`@
+M(RTM(R`@<F5G:6]N("`@("`@("`@/2`B05=37U)%1TE/3B(*("`C+2TC("!E
+M;F-R>7!T("`@("`@("`]('1R=64*("`C+2TC?0I]"@HC"B,@05=3(%!R;W9I
+M9&5R+@HC"G!R;W9I9&5R(")A=W,B('L*("!A;&EA<R`@("`@("`@("`@("`@
+M(#T@(D%74U]214=)3TXB"B`@<')O9FEL92`@("`@("`@("`@("`](")!5U-?
+M4%)/1DE,12(*("!R96=I;VX@("`@("`@("`@("`@(#T@(D%74U]214=)3TXB
+M"B`@(V%L;&]W961?86-C;W5N=%]I9',@/2!;70I]"@HC"B,@4S,@<W1A=&4@
+M8G5C:V5T+@HC"G)E<V]U<F-E(")A=W-?<S-?8G5C:V5T(B`B=&9?<W1A=&4B
+M('L*("!A8VP@("`@("`@("`@(#T@(G!R:79A=&4B"B`@8G5C:V5T("`@("`@
+M("`](")3,U]"54-+150B"B`@9F]R8V5?9&5S=')O>2`](&9A;'-E"B`@<F5G
+M:6]N("`@("`@("`](")!5U-?4D5'24].(@H*("!L:69E8WEC;&4@>PH@("`@
+M<')E=F5N=%]D97-T<F]Y(#T@=')U90H@('T*"B`@=F5R<VEO;FEN9R!["B`@
+M("!E;F%B;&5D(#T@9F%L<V4*("!]"GT*"B,*(R!$>6YA;6\@;&]C:R!M96-H
+M86YI<VTN"B,*<F5S;W5R8V4@(F%W<U]D>6YA;6]D8E]T86)L92(@(G1F7VQO
+M8VLB('L*("!H87-H7VME>2`@("`@("`]("),;V-K240B"B`@;F%M92`@("`@
+M("`@("`@/2`B4%)/2D5#5%].04U%+71F+6QO8VLB"B`@<F5A9%]C87!A8VET
+M>2`@/2`Q,`H@('=R:71E7V-A<&%C:71Y(#T@,3`*"B`@871T<FEB=71E('L*
+M("`@(&YA;64@/2`B3&]C:TE$(@H@("`@='EP92`](")3(@H@('T*"B`@;&EF
+J96-Y8VQE('L*("`@('!R979E;G1?9&5S=')O>2`]('1R=64*("!]"GT*
+`
+end
