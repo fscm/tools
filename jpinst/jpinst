@@ -105,9 +105,9 @@ function install_plugin() {
     echo "  plugin '${_plugin_}' already installed"
   else
     echo "  installing '${_plugin_}'..."
-    __PLUGINS__+=("${plugin}")
-    curl -fsSL --retry 3 --insecure "https://updates.jenkins-ci.org/latest/${_plugin_}.hpi" --output "${PLUGINS_DIR}/${_plugin_}.hpi" &> /dev/null || echo "  unable to install plugin '${_plugin_}'..."
-    install_dependencies ${plugin}
+    __PLUGINS__+=("${_plugin_}")
+    curl -fsSL --retry 3 --insecure "https://updates.jenkins-ci.org/latest/${_plugin_}.hpi" --output "${PLUGINS_DIR}/${_plugin_}.hpi" &> /dev/null || echo "  unable to install plugin '${_plugin_}'!!!"
+    install_dependencies ${_plugin_}
   fi
 }
 
@@ -117,3 +117,4 @@ for plugin in $(cat ${PLUGINS_FILE} | sort -u); do
 done
 
 exit 0
+
