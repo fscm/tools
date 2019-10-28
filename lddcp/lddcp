@@ -132,7 +132,11 @@ function copy_shared_objects() {
     if ! [[ -d ${DESTINATION}/${obj_dirname} ]]; then
       mkdir -p ${DESTINATION}/${obj_dirname}
     fi
-    \cp -aP ${obj} ${DESTINATION}/${obj}
+    if [[ -e ${DESTINATION}/${obj} ]]; then
+      echo "  skipping ${obj}"
+    else
+      \cp -aP ${obj} ${DESTINATION}/${obj}
+    fi
   done
 }
 
