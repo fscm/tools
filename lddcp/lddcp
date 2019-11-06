@@ -15,8 +15,7 @@
 
 set -e
 
-BASEDIR=$(dirname $0)
-BASENAME=$(basename $0)
+BASENAME=$(basename "$0")
 
 # Variables
 DESTINATION=
@@ -45,7 +44,7 @@ function show_usage() {
 while getopts ":d:l:p:" opt; do
   case $opt in
     d)
-      DESTINATION=${OPTARG}
+      DESTINATION=$(cd "${OPTARG}"; echo "$PWD")
       ;;
     l)
       __REQUIRED_OBJS__+=("${OPTARG}")
@@ -78,7 +77,7 @@ if [[ ("x${DESTINATION}" = "x") || (${#__PROGRAMS__[@]} -eq 0) ]]; then
 fi
 
 # Check if destination folder exists
-# -- Remove this check for destination folder to be crated
+# -- Remove this check for destination folder to be created
 if ! [[ -d "${DESTINATION}" ]]; then
   echo >&2 "  [ERROR] Destination path not found or not a directory."
   exit 5
@@ -92,7 +91,7 @@ fi
 #
 function find_shared_objects() {
   local obj=$1
-  for shared in $(ldd ${obj} | awk 'BEGIN{ORS=" "} $1~/^\//{print $1} $3~/^\//{print $3}'); do
+  for shared in $(ldd "${obj}" | awk 'BEGIN{ORS=" "} $1~/^\//{print $1} $3~/^\//{print $3}'); do
     if ! [[ " ${__REQUIRED_OBJS__[@]} " =~ " ${shared} " ]]; then
       if [[ -L "${shared}" ]]; then
         _obj=$(readlink "${shared}")
@@ -102,7 +101,7 @@ function find_shared_objects() {
         __REQUIRED_OBJS__+=("${_obj}")
       fi
       __REQUIRED_OBJS__+=("${shared}")
-      find_shared_objects ${shared}
+      find_shared_objects "${shared}"
     fi
   done
 }
@@ -127,15 +126,17 @@ function queue_shared_objects() {
 #
 function copy_shared_objects() {
   for obj in ${__QUEUED_OBJS__[@]}; do
-    echo "  copying ${obj}"
-    obj_dirname=$(dirname ${obj})
-    if ! [[ -d ${DESTINATION}/${obj_dirname} ]]; then
-      mkdir -p ${DESTINATION}/${obj_dirname}
-    fi
-    if [[ -e ${DESTINATION}/${obj} ]]; then
+    if [[ "${obj}" == "${DESTINATION}/"* ]]; then
+      echo "  ignoring ${obj}"
+    elif [[ -e "${DESTINATION}/${obj}" ]]; then
       echo "  skipping ${obj}"
     else
-      \cp -aP ${obj} ${DESTINATION}/${obj}
+      echo "  copying ${obj}"
+      obj_dirname=$(dirname "${obj}")
+      if ! [[ -d "${DESTINATION}/${obj_dirname}" ]]; then
+        mkdir -p "${DESTINATION}/${obj_dirname}"
+      fi
+      \cp -aP "${obj}" "${DESTINATION}/${obj}"
     fi
   done
 }
@@ -144,7 +145,7 @@ function copy_shared_objects() {
 for program in ${__PROGRAMS__[@]//,/ }; do
   if [[ -f "${program}" ]]; then
     echo " Finding required shared objects [${program}]..."
-    find_shared_objects ${program}
+    find_shared_objects "${program}"
   else
       echo " [WARN] Program not found (${program})."
     fi
