@@ -1,10 +1,10 @@
 # bootstrap tool
 
-Tool to initialise an AWS S3 Remote Backend for Terraform.
+Tool to initialize an AWS S3 Remote Backend for Terraform.
 
 ## Synopsis
 
-This script will initialise an AWS S3 remote backend with a DynamoDB table to
+This script will initialize an AWS S3 remote backend with a DynamoDB table to
 control state locking.
 
 A folder with the `environment` name will be created inside the root directory
@@ -17,23 +17,16 @@ There are a couple of things needed for the script to work.
 
 ### Prerequisites
 
-This script requires *bash* version 4.0 or above to work properly.
-
-This script will also required the following system tools to be installed:
+This script requires the following system tools to be installed:
+* base64
 * basename
 * cat
-* cut
-* date
-* dirname
-* grep
 * make
 * mkdir
 * pwd
 * sed
-* tail
-* uuencode
 
-In adition it will also require for
+In addition it will also require for
 [Terraform](https://www.terraform.io/intro/getting-started/install.html)
 (version 0.12.0 or above) and
 [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-install.html)
@@ -56,7 +49,7 @@ Usage: bootstrap [options] (help|init)
 
 #### Examples
 
-The following example will Initialise an AWS S3 Remote Backend for a new
+The following example will Initialize an AWS S3 Remote Backend for a new
 project inside the current directory:
 
 ```
