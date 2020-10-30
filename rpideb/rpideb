@@ -1,0 +1,293 @@
+#!/bin/bash
+#
+# Shell script to create a Debian image for Raspberry Pi.
+#
+# Copyright 2019-2020, Frederico Martins
+#   Author: Frederico Martins <http://github.com/fscm>
+#
+# SPDX-License-Identifier: MIT
+#
+# This program is free software. You can use it and/or modify it under the
+# terms of the MIT License.
+#
+
+set -e
+
+# === Environment ===
+DEBCONF_NONINTERACTIVE_SEEN="true"
+DEBIAN_FRONTEND="noninteractive"
+
+
+# === Variables ===
+BASENAME="$(basename "${0}")"
+
+__BUILD_DIR__="${__BUILD_DIR__:-/build}"
+__WORK_DIR__="${__WORK_DIR__:-$PWD}"
+__TS__="$(date +%Y%m%d)"
+
+ARCH="${ARCH:-armel}"
+SUITE="${SUITE:-buster}"
+MIRROR="${MIRROR:-http://deb.debian.org/debian}"
+LOGFILE="${__WORK_DIR__}/build-${SUITE}-${ARCH}-${__TS__}.log"
+
+
+# === Functions ===
+
+# Check exit status
+finish() {
+  [[ $? -eq 0 ]] || echo '[ERROR] More information on the log file'
+}
+
+# Checks if an arch is valid.
+is_valid_arch() {
+  local _arch_="$1"
+  [[ "${_arch_}" =~ ^arm(el|hf|64)$ ]]
+}
+
+# Checks if a suite is valid.
+is_valid_suite() {
+  local _suite_="$1"
+  [[ "${_suite_}" =~ ^(buster)$ ]]
+}
+
+# Print and log text
+l_echo() {
+  echo "$@"
+  echo "$@" >> "${LOGFILE}"
+}
+
+# Usage
+show_usage() {
+  local _usage_="
+Usage: ${BASENAME} [options]
+  options:
+    -a <ARCH>   The Raspberry Pi CPU arch (default: 'armel'). See below for
+                available options.
+    -s <SUITE>  The Debian version (default is 'buster'). See bellow for a 
+                list of the supported version.
+
+  ARCH:
+    'armel'    for Raspberry Pi Zero, Zero W and 1.
+    'armhf'    for Raspberry Pi 2.
+    'arm64'    for Raspberry Pi 3 and 4.
+
+  SUITE:
+    'buster'   for Debian Buster (10.x).
+"
+  echo "${_usage_}"
+}
+
+
+# === Options parsing ===
+while getopts ":a:hs:" opt; do
+  case ${opt} in
+    a)
+      ARCH=${OPTARG}
+      ;;
+    h)
+      show_usage
+      exit 0
+      ;;
+    s)
+      SUITE=${OPTARG}
+      ;;
+    \?)
+      echo >&2 "[ERROR] Invalid option: -${OPTARG}"
+      exit 1
+      ;;
+    :)
+      echo >&2 "[ERROR] Option -${OPTARG} requires an argument"
+      exit 2
+      ;;
+  esac
+done
+
+
+# === Main ===
+
+# exit trap ===
+trap finish Exit
+
+# empty log file (if exists)
+: > "${LOGFILE}"
+
+# check permissions
+if [[ "$(id -u)" -ne 0 ]]; then
+  l_echo >&2 "[ERROR] This script requires privileged access to system files"
+  exit 3
+fi
+
+# check arch
+if ! is_valid_arch "${ARCH}"; then
+  l_echo >&2 "[ERROR] Invalid arch (-a) value"
+  exit 4
+fi
+
+# check suite
+if ! is_valid_suite "${SUITE}"; then
+  l_echo >&2 "[ERROR] Invalid suite (-s) value"
+  exit 5
+fi
+
+# image name
+RP_IMAGE="${__WORK_DIR__}/RaspberryPi-${SUITE}-${ARCH}-${__TS__}.img"
+
+# start
+l_echo '[INFO ] starting build'
+
+# create build structure
+l_echo '[INFO ] creating build structure'
+{
+  rm --verbose --force --recursive "${__BUILD_DIR__}" ;
+  install --verbose --directory --mode=0755 "${__BUILD_DIR__}" ;
+} >> "${LOGFILE}" 2>&1
+
+# install dependencies
+l_echo '[INFO ] instaling dependencies'
+{
+  apt-get -qq update ;
+  apt-get -qq -y -o=Dpkg::Use-Pty=0 --no-install-recommends install \
+    binutils \
+    bzip2 \
+    ca-certificates \
+    coreutils \
+    curl \
+    dbus \
+    debian-archive-keyring \
+    debootstrap \
+    dosfstools \
+    dpkg-dev \
+    e2fsprogs \
+    fdisk \
+    kpartx \
+    mount \
+    qemu-user-static \
+    wget \
+    zip ;
+} >> "${LOGFILE}" 2>&1
+
+# set device(s)
+l_echo '[INFO ] setting device(s)'
+{
+  LOOP_DEVICE_PATH="$(losetup --find)" ;
+  LOOP_DEVICE_NAME="$(basename "${LOOP_DEVICE_PATH}")" ;
+} >> "${LOGFILE}" 2>&1
+
+# create bootable image
+l_echo '[INFO ] creating bootable image'
+{
+  dd if='/dev/zero' of="${RP_IMAGE}" bs=1M count=1024 ;
+  losetup --verbose --partscan "${LOOP_DEVICE_PATH}" "${RP_IMAGE}" ;
+  printf 'o\nn\np\n1\n\n+64M\nt\nc\nn\np\n2\n\n\nt\n2\n83\nw\n' | fdisk "${LOOP_DEVICE_PATH}" ;
+  kpartx -a -v "${LOOP_DEVICE_PATH}" ;
+  mkfs.vfat -n 'FW' "/dev/mapper/${LOOP_DEVICE_NAME}p1" ;
+  mkfs.ext4 -L 'ROOT' -O '^huge_file,^metadata_csum,^64bit' "/dev/mapper/${LOOP_DEVICE_NAME}p2" ;
+  mount --verbose "/dev/mapper/${LOOP_DEVICE_NAME}p2" "${__BUILD_DIR__}" ;
+  install --verbose --directory --mode=0755 "${__BUILD_DIR__}/boot/firmware" ;
+  mount --verbose "/dev/mapper/${LOOP_DEVICE_NAME}p1" "${__BUILD_DIR__}/boot/firmware" ;
+} >> "${LOGFILE}" 2>&1
+
+# build base os
+l_echo '[INFO ] building base os'
+{
+  ARCH_PACKAGES='' ;
+  case $ARCH in
+    "armel")
+      ARCH_PACKAGES='raspi3-firmware,linux-image-rpi'
+      ;;
+    "armhf")
+      ARCH_PACKAGES='raspi3-firmware,linux-image-armmp-lpae'
+      ;;
+    "arm64")
+      ARCH_PACKAGES='raspi-firmware,linux-image-arm64'
+      ;;
+    *)
+      ;;
+  esac ;
+  qemu-debootstrap \
+    --arch="${ARCH}" \
+    --components=main,contrib,non-free \
+    --include=${ARCH_PACKAGES},ca-certificates,console-setup,firmware-brcm80211,openssh-server,openssl,parted,sudo,wget,wireless-regdb \
+    "${SUITE}" \
+    "${__BUILD_DIR__}" \
+    "${MIRROR}" ;
+} >> "${LOGFILE}" 2>&1
+
+# configure base os
+l_echo '[INFO ] configuring base os'
+{
+  # firmware
+  sed -i -e 's,root=[^ ]* ,root=LABEL=ROOT rootfstype=ext4 ,' /build/boot/firmware/cmdline.txt ;
+  # apt
+  echo "deb http://deb.debian.org/debian ${SUITE} main contrib non-free" > "${__BUILD_DIR__}/etc/apt/sources.list" ;
+  echo "deb http://security.debian.org/ ${SUITE}/updates main contrib non-free" >> "${__BUILD_DIR__}/etc/apt/sources.list" ;
+  echo "deb http://deb.debian.org/debian ${SUITE}-updates main contrib non-free" >> "${__BUILD_DIR__}/etc/apt/sources.list" ;
+  APT_GET_CLEAN='"rm -f /var/cache/apt/archives/*.deb /var/cache/apt/archives/partial/*.deb /var/cache/apt/*.bin || true";' ;
+  printf 'DPkg::Post-Invoke { %s };\nAPT::Update::Post-Invoke { %s };\nDir::Cache::pkgcache "";\nDir::Cache::srcpkgcache "";\n' "${APT_GET_CLEAN}" "${APT_GET_CLEAN}" > "${__BUILD_DIR__}/etc/apt/apt.conf.d/90raspberrypi-clean" ;
+  printf 'DPkg::Use-Pty "false";\n' > "${__BUILD_DIR__}/etc/apt/apt.conf.d/90raspberrypi-no-dpkg-output" ;
+  printf 'Acquire::Languages "none";\n' > "${__BUILD_DIR__}/etc/apt/apt.conf.d/90raspberrypi-no-languages" ;
+  printf 'Acquire::GzipIndexes "true";\nAcquire::CompressionTypes::Order:: "gz";\n' > "${__BUILD_DIR__}/etc/apt/apt.conf.d/90raspberrypi-gzip-indexes" ;
+  printf 'APT::AutoRemove::SuggestsImportant "false";\n' > "${__BUILD_DIR__}/etc/apt/apt.conf.d/90raspberrypi-autoremove-suggests" ;
+  printf 'APT::Install-Recommends "false";\n' > "${__BUILD_DIR__}/etc/apt/apt.conf.d/90raspberrypi-no-recommends" ;
+  # hostname
+  echo 'raspberrypi' > "${__BUILD_DIR__}/etc/hostname" ;
+  # dns/network
+  printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > "${__BUILD_DIR__}/etc/resolv.conf" ;
+  printf 'auto lo\niface lo inet loopback\n' > "${__BUILD_DIR__}/etc/network/interfaces.d/lo" ;
+  printf 'auto eth0\nallow-hotplug eth0\niface eth0 inet dhcp\n' > "${__BUILD_DIR__}/etc/network/interfaces.d/eth0" ;
+  # fstab
+  printf 'LABEL=ROOT / ext4 defaults,noatime,nodiratime,errors=remount-ro 0 1\nLABEL=FW /boot/firmware vfat defaults 0 2\n' > "${__BUILD_DIR__}/etc/fstab" ;
+  # tools
+  printf '[Unit]\nDescription=resize root file system\nBefore=local-fs-pre.target\nDefaultDependencies=no\n\n[Service]\nType=oneshot\nTimeoutSec=infinity\nExecStart=/usr/sbin/resizerootfs\nExecStart=/bin/systemctl --no-reload disable %%n\n\n[Install]\nRequiredBy=local-fs-pre.target\n' > "${__BUILD_DIR__}/etc/systemd/resizerootfs.service" ;
+  printf '#!/bin/sh\nrootpart="$(findmnt --noheadings --output SOURCE ROOT)"\nrootdev="/dev/$(lsblk --noheadings --output PKNAME "${rootpart}")"\nprintf '\'',+\\n'\'' | flock ${rootdev} sfdisk --force ${rootdev} --partno 2\nsleep 5\nudevadm settle\nsleep 5\nflock ${rootdev} partprobe ${rootdev}\nmount -o remount,rw ${rootpart}\nresize2fs ${rootpart}\nexit 0\n' > "${__BUILD_DIR__}/usr/sbin/resizerootfs" ;
+  chmod 0755 "${__BUILD_DIR__}/usr/sbin/resizerootfs" ;
+  # root password
+  printf 'raspberry\nraspberry\n' | chroot "${__BUILD_DIR__}" passwd root ;
+  # serial console
+  chroot "${__BUILD_DIR__}" systemctl enable serial-getty@ttyS0.service ;
+  # user
+  chroot "${__BUILD_DIR__}" useradd --create-home --user-group --groups='adm,users' --comment='RaspberryPi' --shell='/bin/bash' --home-dir='/home/pi' pi ;
+  printf 'raspberry\nraspberry\n' | chroot "${__BUILD_DIR__}" passwd pi ;
+  echo 'pi  ALL=(ALL) NOPASSWD: ALL' > "${__BUILD_DIR__}/etc/sudoers.d/pi" ;
+} >> "${LOGFILE}" 2>&1
+
+# update base os
+l_echo '[INFO ] updating base os'
+{
+  chroot "${__BUILD_DIR__}" apt-get -qq update ;
+  chroot "${__BUILD_DIR__}" apt-get -qq -y -o Dpkg::Options::="--force-confdef" --no-install-recommends upgrade ;
+  chroot "${__BUILD_DIR__}" apt-get clean ;
+} >> "${LOGFILE}" 2>&1
+
+# cleanup base os
+l_echo '[INFO ] cleaning base os'
+{
+  rm --verbose --force --recursive "${__BUILD_DIR__}/var/lib/apt/lists"/* ;
+  rm --verbose --force --recursive "${__BUILD_DIR__}/var/log"/* ;
+  rm --verbose --force --recursive "${__BUILD_DIR__}/tmp"/.??* ;
+  find "${__BUILD_DIR__}/usr/share/doc" -mindepth 1 -not -type d -not \( -iname 'COPYING*' -o -iname 'GPL' -o -iname '*LICENSE*' -o -iname 'copyright' \) -delete ;
+  find "${__BUILD_DIR__}/usr/share/doc" -mindepth 1 -type d -empty -delete ;
+  find "${__BUILD_DIR__}/var/cache" -type f -delete ;
+  find "${__BUILD_DIR__}/etc" -type f -name '*-' -delete ;
+  find "${__BUILD_DIR__}" -type f -name '*-old' -delete ;
+  : > "${__BUILD_DIR__}/etc/machine-id" ;
+  rm --verbose --force "${__BUILD_DIR__}/usr/bin/qemu-arm-static" ;
+  ( dd if='/dev/zero' of="${__BUILD_DIR__}/boot/firmware/EMPTY" bs=1M || rm --force "${__BUILD_DIR__}/boot/firmware/EMPTY" ) ;
+  ( dd if='/dev/zero' of="${__BUILD_DIR__}/EMPTY" bs=1M || rm --force "${__BUILD_DIR__}/EMPTY" ) ;
+} >> "${LOGFILE}" 2>&1
+
+# finish bootable image
+l_echo '[INFO ] finishing bootable image'
+{
+  umount --verbose "/dev/mapper/${LOOP_DEVICE_NAME}p1" ;
+  umount --verbose "/dev/mapper/${LOOP_DEVICE_NAME}p2" ;
+  kpartx -d -v "${LOOP_DEVICE_PATH}" ;
+  losetup --verbose --detach "${LOOP_DEVICE_PATH}" ;
+  ( cd "$(dirname "${RP_IMAGE}")" && zip -q -9 "${RP_IMAGE/.img/.zip}" "$(basename "${RP_IMAGE}")" ) ;
+  rm --verbose --force "${RP_IMAGE}" ;
+} >> "${LOGFILE}" 2>&1
+
+# done
+l_echo '[INFO ] all done!'
+
+exit 0

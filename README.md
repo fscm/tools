@@ -25,6 +25,7 @@ Detailed instructions can be found on the specific tools folders.
 * `bootstrap` - Shell script to initialise an AWS terraform project.
 * `jpinst` - Shell script to install Jenkins plugins and dependencies.
 * `lddcp` - Shell script to find and copy all of the shared libraries used by a program.
+* `rpideb` - Shell script to build a Debian image for Raspberry Pi boards.
 
 ## Contributing
 
