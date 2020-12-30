@@ -4,7 +4,7 @@
 # It will search for all of the shared libraries recursively and will respect
 # links and copy the linked libraries alongside the links.
 #
-# Copyright 2016-2020, Frederico Martins
+# Copyright 2016-2021, Frederico Martins
 #   Author: Frederico Martins <http://github.com/fscm>
 #
 # SPDX-License-Identifier: MIT

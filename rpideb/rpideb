@@ -2,7 +2,7 @@
 #
 # Shell script to create a Debian image for Raspberry Pi.
 #
-# Copyright 2019-2020, Frederico Martins
+# Copyright 2019-2021, Frederico Martins
 #   Author: Frederico Martins <http://github.com/fscm>
 #
 # SPDX-License-Identifier: MIT
