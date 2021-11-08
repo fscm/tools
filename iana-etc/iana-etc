@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+# -*- coding: UTF-8 -*-
+#
+# copyright: 2020-2021, Frederico Martins
+# author: Frederico Martins <http://github.com/fscm>
+# license: SPDX-License-Identifier: MIT
+
+"""iana-etc.
+
+Creates the `/etc/protocols` and `/etc/services` files from IANA's
+Assigned Internet Protocol Numbers.
+
+This tool will try to fetch information from the IANA's website and
+transform it into the desired files.
+
+A simple example of how to use this tool:
+    iana-etc
+"""
+
+
+import os
+import sys
+import re
+import xml.etree.ElementTree as ET
+from argparse import ArgumentParser
+from io import StringIO
+from pathlib import Path
+from re import search
+from urllib.request import urlopen
+from urllib.error import HTTPError
+from ssl import SSLContext
+
+
+__author__: str = 'Frederico Martins'
+__license__: str = 'MIT'
+__project__: str = Path(__file__).stem
+__version__: str = '0.1.0'
+
+BASE_URL: str = 'https://www.iana.org/assignments'
+PROTOCOLS_URL: str = f'{BASE_URL}/protocol-numbers/protocol-numbers.xml'
+SERVICES_URL: str = f'{BASE_URL}/service-names-port-numbers/service-names-port-numbers.xml'
+
+SSL_CONTEXT: SSLContext = SSLContext()
+
+
+def get_xml(url: str) -> ET.Element:
+    """Obtains the xml content from a given url.
+
+    Args:
+        url (str): The url to the xml info.
+
+    Returns:
+        ET.Element: The xml info
+    """
+    try:
+        req = urlopen(url, context=SSL_CONTEXT)
+        it = ET.iterparse(StringIO(req.read().decode()))
+        for _, e in it:
+            _, _, e.tag = e.tag.rpartition('}')
+        return it.root
+    except HTTPError:
+        print(f'Invalid response for {url}')
+        sys.exit(10)
+
+
+def get_updated(xml: ET.Element) -> str:
+    """Parses xml info to obtain the `updated` field value.
+
+    Args:
+        xml (ET.Element): The xml to parse the info from.
+
+    Returns:
+        str: The `updated` field value
+    """
+    updated = xml.find('updated')
+    updated = (updated.text
+        if not updated == None else 'unknown')
+    return updated
+
+
+def parse_protocols(xml: ET.Element) -> dict:
+    """Parses the protocols information from the xml data.
+
+    Args:
+        xml (ET.Element): The xml to parse the info from.
+
+    Returns:
+        dict: The protocols info
+    """
+    protocols = {}
+    for record in xml.iter('record'):
+        record_alias = record.find('name')
+        if record_alias is not None:
+            if record_alias.text == 'Reserved':
+                record_alias = 'Reserved'
+                record_name = '#'
+            else:
+                record_alias = record_alias.text.replace(
+                    ' (deprecated)', '').replace(' ', '-')
+                record_name = record_alias.lower()
+        else:
+            record_alias = ''
+            record_name = '#'
+        record_description = record.find('description')
+        if (record_description is not None) and (
+                record_description.text is not None):
+            record_description = re.sub('\s+', ' ', (
+                '# ' + record_description.text.replace('\n', ' ')))
+        else:
+            record_description = ('# ' + record_alias)
+        record_number = record.find('value')
+        if record_number is not None:
+            record_number = record_number.text
+        else:
+            record_number = ''
+        key = f'{record_number}/{record_name}'
+        protocols[key] = {
+            'name': record_name,
+            'number': record_number,
+            'alias': record_alias,
+            'description': record_description}
+    return protocols
+
+
+def parse_services(xml: ET.Element) -> dict:
+    """Parses the services information from the xml data.
+
+    Args:
+        xml (ET.Element): The xml to parse the info from.
+
+    Returns:
+        dict: The services info
+    """
+    services = {}
+    for record in xml.iter('record'):
+        record_port = record.find('number')
+        record_protocol = record.find('protocol')
+        if record_port is None or record_protocol is None:
+            continue
+        record_name = record.find('name')
+        if (record_name is not None) and (record_name.text is not None):
+            record_name = record_name.text.replace(' ', '-')
+            match = search(r'\((.*)\)', record_name)
+            if match:
+                record_name = match.group(1).lower()
+        else:
+            record_name = '#'
+        record_port_protocol = (
+            record_port.text.split('-')[0] + '/' + record_protocol.text)
+        record_description = record.find('description')
+        if (record_description is not None) and (
+                record_description.text is not None):
+            record_description = re.sub('\s+', ' ', (
+                '# ' +
+                record_description.text.replace('\n', ' ').replace('<br/>', ' ')))
+        else:
+            record_description = ('# ' + record_name)
+        if record_port_protocol in services:
+            services[record_port_protocol]['aliases'].append(record_name)
+        else:
+            services[record_port_protocol] = {
+                'name': record_name,
+                'aliases': [],
+                'description': record_description}
+    return services
+
+
+def write_protocols(dir: str, updated: str, data: dict) -> None:
+    """Writes the protocols info into the protocols file. The resulting
+    file should be the one placed at `/etc/protocols`.
+
+    Args:
+        dir (str): The output directory for the protocols file.
+        updated (str): The updated info.
+        data (dict): The protocols data.
+    """
+    with open(f'{dir}/protocols', 'w') as f:
+        name_size = max(len(x.get('name')) for x in data.values()) + 2
+        number_size = max(len(x.get('number')) for x in data.values()) + 2
+        alias_size = max(len(x.get('alias')) for x in data.values()) + 2
+        f.write(
+            '# Internet protocols (/etc/protocols)\n'
+            '# See also http://www.iana.org/assignments/protocol-numbers\n'
+            '#\n'
+            f'# last updated {updated}\n')
+        for _, info in data.items():
+            name = info.get('name', '')
+            number = info.get('number')
+            alias = info.get('alias')
+            description = info.get('description')
+            f.write(
+                f'{name: <{name_size}}'
+                f'{number: <{number_size}}'
+                f'{alias: <{alias_size}}'
+                f'{description}\n')
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def write_services(dir: str, updated: str, data: dict) -> None:
+    """Writes the services info into the services file. The resulting
+    file should be the one placed at `/etc/services`.
+
+    Args:
+        dir (str): The output directory for the services file.
+        updated (str): The updated info.
+        data (dict): The services data.
+    """
+    name_size = max(len(x.get('name')) for x in data.values()) + 2
+    port_protocol_size = max(len(x) for x in data) + 2
+    aliases_size = max(len(' '.join(x.get('aliases'))) for x in data.values()) + 2
+    with open(f'{dir}/services', 'w') as f:
+        f.write(
+            '# Network services, Internet style (/etc/services)\n'
+            '# See also http://www.iana.org/assignments/service-names-port-numbers\n'
+            '#\n'
+            f'# last updated {updated}\n')
+        for record, info in data.items():
+            name = info.get('name', '')
+            aliases = ' '.join(info.get('aliases', []))
+            description = info.get('description')
+            f.write(
+                f'{name: <{name_size}}'
+                f'{record: <{port_protocol_size}}'
+                f'{aliases: <{aliases_size}}'
+                f'{description}\n')
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def main() -> None:
+    """main method."""
+    parser = ArgumentParser(
+        prog=__project__, add_help=True, allow_abbrev=False)
+    parser.add_argument(
+        '-d', '--directory', action='store', nargs='?', type=str, help='output dir')
+    parser.add_argument(
+        '-v', '--version', action='version', version=__version__)
+    args = parser.parse_args()
+    output_dir = str(Path(args.directory) if args.directory else Path.cwd())
+
+    print(f'{__project__} version {__version__}\n'
+        f'by {__author__} under {__license__} license\n')
+
+    print('Fetching protocols info...')
+    protocols_xml = get_xml(PROTOCOLS_URL)
+    protocols_updated = get_updated(protocols_xml)
+    protocols_data = parse_protocols(protocols_xml)
+    write_protocols(output_dir, protocols_updated, protocols_data)
+
+    print('Fetching services info...')
+    services_xml = get_xml(SERVICES_URL)
+    services_updated = get_updated(services_xml)
+    services_data = parse_services(services_xml)
+    write_services(output_dir, services_updated, services_data)
+
+
+if __name__ == '__main__':
+    sys.exit(main())
