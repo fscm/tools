@@ -30,6 +30,7 @@ Usage: iana-etc [options]
 
 * `-h` - Shows the help message and exits.
 * `-d <DIRECTORY>` - Output directory.
+* `-q` - Quiet mode.
 * `-v` - Show the program version number and exits.
 
 #### Examples

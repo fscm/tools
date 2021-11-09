@@ -235,9 +235,14 @@ def main() -> None:
     parser.add_argument(
         '-d', '--directory', action='store', nargs='?', type=str, help='output dir')
     parser.add_argument(
+        '-q', '--quiet', action='store_true', help='quiet mode')
+    parser.add_argument(
         '-v', '--version', action='version', version=__version__)
     args = parser.parse_args()
     output_dir = str(Path(args.directory) if args.directory else Path.cwd())
+    if args.quiet:
+        sys.stdout = open(os.devnull, 'a')
+        #sys.stderr = open(os.devnull, 'a')
 
     print(f'{__project__} version {__version__}\n'
         f'by {__author__} under {__license__} license\n')
