@@ -23,6 +23,8 @@ Detailed instructions can be found on the specific tools folders.
 ## List of Tools
 
 * `bootstrap` - Shell script to initialise an AWS terraform project.
+* `gists` - Python script to fetch all gists of a github user.
+* `iana-etc` - Python script to create the `/etc/protocols` and `/etc/services` files.
 * `jpinst` - Shell script to install Jenkins plugins and dependencies.
 * `lddcp` - Shell script to find and copy all of the shared libraries used by a program.
 * `rpideb` - Shell script to build a Debian image for Raspberry Pi boards.
