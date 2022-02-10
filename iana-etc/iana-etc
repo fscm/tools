@@ -28,7 +28,7 @@ from pathlib import Path
 from re import search
 from urllib.request import urlopen
 from urllib.error import HTTPError
-from ssl import SSLContext
+#from ssl import SSLContext
 
 
 __author__: str = 'Frederico Martins'
@@ -40,7 +40,7 @@ BASE_URL: str = 'https://www.iana.org/assignments'
 PROTOCOLS_URL: str = f'{BASE_URL}/protocol-numbers/protocol-numbers.xml'
 SERVICES_URL: str = f'{BASE_URL}/service-names-port-numbers/service-names-port-numbers.xml'
 
-SSL_CONTEXT: SSLContext = SSLContext()
+#SSL_CONTEXT: SSLContext = SSLContext(protocol=None)
 
 
 def get_xml(url: str) -> ET.Element:
@@ -53,7 +53,8 @@ def get_xml(url: str) -> ET.Element:
         ET.Element: The xml info
     """
     try:
-        req = urlopen(url, context=SSL_CONTEXT)
+        #req = urlopen(url, context=SSL_CONTEXT)
+        req = urlopen(url)
         it = ET.iterparse(StringIO(req.read().decode()))
         for _, e in it:
             _, _, e.tag = e.tag.rpartition('}')
